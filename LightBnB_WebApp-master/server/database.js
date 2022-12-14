@@ -1,6 +1,6 @@
 const properties = require('./json/properties.json');
-const users = require('./json/users.json');
 
+// Database adapter for PostgreSQL pool
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -11,26 +11,28 @@ const pool = new Pool({
 });
 
 
+//////////////////////////////////////////////////////////////////////
 /// Users
+//////////////////////////////////////////////////////////////////////
 
 /**
  * Get a single user from the database given their email.
  * @param {String} email The email of the user.
  * @return {Promise<{}>} A promise to the user.
  */
+
 const getUserWithEmail = function(email) {
-  let user;
-  for (const userId in users) {
-    user = users[userId];
-    if (user.email.toLowerCase() === email.toLowerCase()) {
-      break;
-    } else {
-      user = null;
-    }
-  }
-  return Promise.resolve(user);
-}
+  return pool
+  .query(`SELECT * FROM users WHERE email = $1;`, [email])
+  .then(res => {
+    return res.rows[0] || null;
+  })
+  .catch(err => {
+    console.log('Oh no there seems to be an error:', err.message);
+  });
+};
 exports.getUserWithEmail = getUserWithEmail;
+
 
 /**
  * Get a single user from the database given their id.
@@ -38,7 +40,14 @@ exports.getUserWithEmail = getUserWithEmail;
  * @return {Promise<{}>} A promise to the user.
  */
 const getUserWithId = function(id) {
-  return Promise.resolve(users[id]);
+  return pool
+  .query(`SELECT * FROM users WHERE id = $1;`, [id])
+  .then(res => {
+    return res.rows[0] || null;
+  })
+  .catch(err => {
+    console.log('Oh no there seems to be an error:', err.message);
+  });
 }
 exports.getUserWithId = getUserWithId;
 
@@ -49,14 +58,22 @@ exports.getUserWithId = getUserWithId;
  * @return {Promise<{}>} A promise to the user.
  */
 const addUser =  function(user) {
-  const userId = Object.keys(users).length + 1;
-  user.id = userId;
-  users[userId] = user;
-  return Promise.resolve(user);
+  return pool
+  .query(`INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *;`, 
+  [user.name, user.email, user.password])
+  .then(res => {
+    return res;
+  })
+  .catch(err => {
+    console.log('Oh no there seems to be an error:', err.message);
+  });
 }
 exports.addUser = addUser;
 
+
+//////////////////////////////////////////////////////////////////////
 /// Reservations
+//////////////////////////////////////////////////////////////////////
 
 /**
  * Get all reservations for a single user.
@@ -64,11 +81,33 @@ exports.addUser = addUser;
  * @return {Promise<[{}]>} A promise to the reservations.
  */
 const getAllReservations = function(guest_id, limit = 10) {
-  return getAllProperties(null, 2);
+  const queryString = `
+  SELECT reservations.*, properties.*, AVG(coalesce(rating, 0)) as average_rating
+  FROM reservations
+  LEFT JOIN properties ON properties.id = reservations.property_id
+  LEFT JOIN property_reviews ON property_reviews.property_id = properties.id
+  WHERE reservations.guest_id = $1
+  GROUP BY properties.id, reservations.id
+  ORDER BY reservations.start_date
+  LIMIT $2`;
+
+  console.log(queryString, [guest_id, limit]);
+
+  return pool
+    .query(queryString, [guest_id, limit])
+    .then((result) => {
+      return result.rows;
+    })
+    .catch((err) => {
+      console.log('Oh no there seems to be an error:', err.message);
+    });
 }
 exports.getAllReservations = getAllReservations;
 
+
+//////////////////////////////////////////////////////////////////////
 /// Properties
+//////////////////////////////////////////////////////////////////////
 
 /**
  * Get all properties.
@@ -103,4 +142,4 @@ const addProperty = function(property) {
 }
 exports.addProperty = addProperty;
 
-pool.query(`SELECT title FROM properties LIMIT 10;`).then(response => {})
+pool.query(`SELECT title FROM properties LIMIT 10;`)
