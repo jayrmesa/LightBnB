@@ -1,6 +1,9 @@
 const properties = require('./json/properties.json');
 
-// Database adapter for PostgreSQL pool
+//////////////////////////////////////////////////////////////////////
+/// Database adapter for PostgreSQL pool
+//////////////////////////////////////////////////////////////////////
+
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -9,6 +12,23 @@ const pool = new Pool({
   host: 'localhost',
   database: 'lightbnb',
 });
+
+//////////////////////////////////////////////////////////////////////
+/// WHERE, AND clause - Properties
+//////////////////////////////////////////////////////////////////////
+
+/**
+ * Returns  WHERE or AND depending if its first time called.
+ * @return {String} 'WHERE || 'AND' for use on SQL queries.
+ */
+
+  const whereAndClause = () => {
+    const param = ['WHERE', 'AND'];
+
+    return function() {
+      return param.length > 1 ? param.shift() : param[0];
+    }
+  };
 
 
 //////////////////////////////////////////////////////////////////////
@@ -84,8 +104,8 @@ const getAllReservations = function(guest_id, limit = 10) {
   const queryString = `
   SELECT reservations.*, properties.*, AVG(coalesce(rating, 0)) as average_rating
   FROM reservations
-  LEFT JOIN properties ON properties.id = reservations.property_id
-  LEFT JOIN property_reviews ON property_reviews.property_id = properties.id
+  JOIN properties ON properties.id = reservations.property_id
+  JOIN property_reviews ON property_reviews.property_id = properties.id
   WHERE reservations.guest_id = $1
   GROUP BY properties.id, reservations.id
   ORDER BY reservations.start_date
@@ -116,16 +136,61 @@ exports.getAllReservations = getAllReservations;
  * @return {Promise<[{}]>}  A promise to the properties.
  */
  const getAllProperties = (options, limit = 10) => {
-  return pool
-    .query(`SELECT * FROM properties LIMIT $1`, [limit])
-    .then((result) => {
-      console.log(result.rows);
-      return result.rows;
-    })
-    .catch((err) => {
-      console.log(err.message);
-    });
-};
+  const queryParams = [];
+    const WHERE_AND = whereAndClause();
+
+    /// Basic query implementation that comes before the WHERE clause
+    let queryString = `
+    SELECT properties.*, avg(rating) as average_rating
+    FROM properties
+    LEFT JOIN property_reviews ON properties.id = property_id`;
+
+    /// Additional options query, check the city has been passed
+    if (options.city) {
+      queryParams.push(`%${options.city}%`);
+      queryString += `\n\t${WHERE_AND()} city LIKE $${queryParams.length}`;
+    }
+
+    /// owner_id is passed, only return properties belonging to that owner.
+    if (options.owner_id) {
+      queryParams.push(`${options.owner_id}`);
+      queryString += `\n\t${WHERE_AND()} owner_id = $${queryParams.length}`;
+    }
+
+    /// minimum price per night multiplied by 100 since the data stores in cents.
+    if (options.minimum_price_per_night) {
+      queryParams.push(`${options.minimum_price_per_night * 100}`);
+      queryString += `\n\t${WHERE_AND()} cost_per_night >= $${queryParams.length}`;
+    }
+
+    /// maximum price per night multiplied by 100 since the data stores in cents.
+    if (options.maximum_price_per_night) {
+      queryParams.push(`${options.maximum_price_per_night * 100}`);
+      queryString += `\n\t${WHERE_AND()} cost_per_night <= $${queryParams.length}`;
+    }
+
+    queryString += `
+    GROUP BY properties.id`;
+
+    /// Another optional query, If a minimum_rating is passed, only return properties with a rating equal to or higher.
+    if (options.minimum_rating) {
+      queryParams.push(`${options.minimum_rating}`);
+      queryString += `\n  HAVING avg(rating) >= $${queryParams.length}`;
+    }
+
+    /// Ending query, set the limit for the number of results to be returned
+    queryParams.push(limit);
+    queryString += `
+    ORDER BY cost_per_night
+    LIMIT $${queryParams.length}`;
+
+    /// just to make sure it works
+    console.log(queryString, queryParams);
+
+    //Submit
+    return pool.query(queryString, queryParams).then((res) => res.rows);
+  };
+
 exports.getAllProperties = getAllProperties;
 
 
@@ -141,5 +206,3 @@ const addProperty = function(property) {
   return Promise.resolve(property);
 }
 exports.addProperty = addProperty;
-
-pool.query(`SELECT title FROM properties LIMIT 10;`)
