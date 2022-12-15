@@ -1,5 +1,3 @@
-const properties = require('./json/properties.json');
-
 //////////////////////////////////////////////////////////////////////
 /// Database adapter for PostgreSQL pool
 //////////////////////////////////////////////////////////////////////
@@ -31,6 +29,7 @@ const pool = new Pool({
   };
 
 
+module.exports = {  
 //////////////////////////////////////////////////////////////////////
 /// Users
 //////////////////////////////////////////////////////////////////////
@@ -41,7 +40,7 @@ const pool = new Pool({
  * @return {Promise<{}>} A promise to the user.
  */
 
-const getUserWithEmail = function(email) {
+getUserWithEmail: (email) => {
   return pool
   .query(`SELECT * FROM users WHERE email = $1;`, [email])
   .then(res => {
@@ -50,8 +49,7 @@ const getUserWithEmail = function(email) {
   .catch(err => {
     console.log('Oh no there seems to be an error:', err.message);
   });
-};
-exports.getUserWithEmail = getUserWithEmail;
+},
 
 
 /**
@@ -59,7 +57,7 @@ exports.getUserWithEmail = getUserWithEmail;
  * @param {string} id The id of the user.
  * @return {Promise<{}>} A promise to the user.
  */
-const getUserWithId = function(id) {
+getUserWithId: (id) => {
   return pool
   .query(`SELECT * FROM users WHERE id = $1;`, [id])
   .then(res => {
@@ -68,16 +66,14 @@ const getUserWithId = function(id) {
   .catch(err => {
     console.log('Oh no there seems to be an error:', err.message);
   });
-}
-exports.getUserWithId = getUserWithId;
-
+},
 
 /**
  * Add a new user to the database.
  * @param {{name: string, password: string, email: string}} user
  * @return {Promise<{}>} A promise to the user.
  */
-const addUser =  function(user) {
+addUser: (user) => {
   return pool
   .query(`INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *;`, 
   [user.name, user.email, user.password])
@@ -87,8 +83,7 @@ const addUser =  function(user) {
   .catch(err => {
     console.log('Oh no there seems to be an error:', err.message);
   });
-}
-exports.addUser = addUser;
+},
 
 
 //////////////////////////////////////////////////////////////////////
@@ -100,7 +95,7 @@ exports.addUser = addUser;
  * @param {string} guest_id The id of the user.
  * @return {Promise<[{}]>} A promise to the reservations.
  */
-const getAllReservations = function(guest_id, limit = 10) {
+getAllReservations: (guest_id, limit = 10) => {
   const queryString = `
   SELECT reservations.*, properties.*, AVG(coalesce(rating, 0)) as average_rating
   FROM reservations
@@ -121,10 +116,67 @@ const getAllReservations = function(guest_id, limit = 10) {
     .catch((err) => {
       console.log('Oh no there seems to be an error:', err.message);
     });
-}
-exports.getAllReservations = getAllReservations;
+},
 
+ /**
+   * Get all reservations within a given date range.
+   * @param {date} start_date The start date of ther reservation.
+   * @param {date} end_date The end date of the reservation.
+   * @return {Promise<[{}]>} A promise to the reservations.
+   */
+  checkReservationExists: (start_date, end_date) => {
+    
+    const queryString = `
+    SELECT *
+    FROM reservations
+    WHERE (start_date <= $2) and (end_date >= $1)
+    `;
 
+    return pool
+      .query(queryString, [start_date, end_date])
+      .then(res => {
+        console.log('checkReservationExists sending');
+        return res.rows;
+      })
+      .catch((err) => {
+        console.log('Oh no there seems to be an error:', err.message);
+      });
+
+  },
+
+   /**
+   * Add a reservation to the database
+   * @param {{}} reservation An object containing all of the reservation details.
+   * @return {Promise<{}>} A promise to the reservation.
+   */
+    addReservation: (reservation) => {
+      const queryString = `
+      INSERT INTO reservations (
+        start_date,
+        end_date,
+        property_id,
+        guest_id
+      )
+      VALUES
+      ($1, $2, $3, $4) RETURNING *;`;
+  
+      const queryParams = [
+        reservation.start_date,
+        reservation.end_date,
+        reservation.property_id,
+        reservation.guest_id
+      ];
+  
+      return pool
+        .query(queryString, queryParams)
+        .then(res => {
+          return res;
+        })
+        .catch(err => {
+          console.log('Oh no there seems to be an error:', err.message);
+        });
+    },
+  
 //////////////////////////////////////////////////////////////////////
 /// Properties
 //////////////////////////////////////////////////////////////////////
@@ -135,8 +187,8 @@ exports.getAllReservations = getAllReservations;
  * @param {*} limit The number of results to return.
  * @return {Promise<[{}]>}  A promise to the properties.
  */
- const getAllProperties = (options, limit = 10) => {
-  const queryParams = [];
+getAllProperties: (options, limit = 10) => {
+    const queryParams = [];
     const WHERE_AND = whereAndClause();
 
     /// Basic query implementation that comes before the WHERE clause
@@ -189,17 +241,14 @@ exports.getAllReservations = getAllReservations;
 
     //Submit
     return pool.query(queryString, queryParams).then((res) => res.rows);
-  };
-
-exports.getAllProperties = getAllProperties;
-
+  },
 
 /**
  * Add a property to the database
  * @param {{}} property An object containing all of the property details.
  * @return {Promise<{}>} A promise to the property.
  */
-const addProperty = function(property) {
+addProperty: (property) => {
   const queryString = `
   INSERT INTO properties (
     owner_id,
@@ -245,5 +294,6 @@ const addProperty = function(property) {
     .catch(err => {
       console.log('Oh no there seems to be an error:', err.message);
     });
+  }
 };
-exports.addProperty = addProperty;
+
